@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Health Monitor</title>
+<style>
+  :root {
+    --bg: #0e0f11;
+    --surface: #16181c;
+    --surface2: #1e2127;
+    --border: rgba(255,255,255,0.07);
+    --text: #e8eaed;
+    --muted: #7a7f8a;
+    --ok: #4caf50;
+    --warn: #f5a623;
+    --crit: #e74c3c;
+    --ok-bg: rgba(76,175,80,0.1);
+    --warn-bg: rgba(245,166,35,0.1);
+    --crit-bg: rgba(231,76,60,0.1);
+    --ok-border: rgba(76,175,80,0.3);
+    --warn-border: rgba(245,166,35,0.3);
+    --crit-border: rgba(231,76,60,0.3);
+    --font: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  .topbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .logo { font-family: var(--font); font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: -0.02em; }
+  .logo span { color: var(--ok); }
+  .hostname-chip { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; font-family: var(--font); font-size: 11px; color: var(--muted); }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .live-pill { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ok); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+  .last-update { font-size: 11px; color: var(--muted); font-family: var(--font); }
+  .err-pill { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--crit); background: var(--crit-bg); border: 1px solid var(--crit-border); border-radius: 6px; padding: 3px 10px; }
+
+  .alerts-bar { display: none; background: var(--warn-bg); border-bottom: 1px solid var(--warn-border); padding: 9px 24px; font-size: 12px; color: var(--warn); font-family: var(--font); }
+  .alerts-bar.visible { display: block; }
+  .alerts-bar.critical { background: var(--crit-bg); border-color: var(--crit-border); color: var(--crit); }
+
+  .main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+
+  .overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+  .overview-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .overview-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+  }
+  .overview-card.ok::before { background: var(--ok); }
+  .overview-card.warning::before { background: var(--warn); }
+  .overview-card.critical::before { background: var(--crit); }
+  .oc-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .oc-value { font-size: 24px; font-family: var(--font); font-weight: 600; line-height: 1; }
+  .oc-value.ok { color: var(--ok); }
+  .oc-value.warning { color: var(--warn); }
+  .oc-value.critical { color: var(--crit); }
+  .oc-sub { font-size: 10px; color: var(--muted); margin-top: 5px; font-family: var(--font); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 1100px) { .grid-3 { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 700px) { .grid-3 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-title { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  .status-badge {
+    font-size: 10px;
+    font-family: var(--font);
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  .badge-ok { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok-border); }
+  .badge-warning { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-border); }
+  .badge-critical { background: var(--crit-bg); color: var(--crit); border: 1px solid var(--crit-border); }
+
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .bar-label { font-size: 11px; color: var(--muted); font-family: var(--font); width: 72px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-label.app { width: 130px; }
+  .app-list { margin-top: 4px; }
+  .app-list .bar-row { margin-bottom: 6px; }
+  .app-meta { font-size: 10px; color: var(--muted); margin-left: 140px; margin-top: -4px; margin-bottom: 6px; }
+  .bar-track { flex: 1; height: 5px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+  .fill-ok { background: var(--ok); }
+  .fill-warn { background: var(--warn); }
+  .fill-crit { background: var(--crit); }
+  .bar-pct { font-family: var(--font); font-size: 11px; color: var(--text); width: 36px; text-align: right; flex-shrink: 0; }
+
+  .kv-table { width: 100%; }
+  .kv-table tr td { padding: 4px 0; }
+  .kv-table tr td:first-child { color: var(--muted); font-size: 11px; padding-right: 12px; }
+  .kv-table tr td:last-child { font-family: var(--font); font-size: 11px; color: var(--text); text-align: right; }
+  .val-ok { color: var(--ok) !important; }
+  .val-warn { color: var(--warn) !important; }
+  .val-crit { color: var(--crit) !important; }
+
+  .temp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .temp-chip { background: var(--surface2); border-radius: 7px; padding: 9px 11px; }
+  .temp-name { font-size: 10px; color: var(--muted); margin-bottom: 3px; }
+  .temp-val { font-family: var(--font); font-size: 16px; font-weight: 600; }
+
+  .log-list { list-style: none; display: flex; flex-direction: column; gap: 5px; max-height: 220px; overflow-y: auto; }
+  .log-list::-webkit-scrollbar { width: 4px; }
+  .log-list::-webkit-scrollbar-track { background: transparent; }
+  .log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .log-entry { display: flex; gap: 10px; font-family: var(--font); font-size: 10px; line-height: 1.5; }
+  .log-time { color: var(--muted); flex-shrink: 0; }
+  .log-msg { color: var(--muted); }
+  .log-msg.warning { color: var(--warn); }
+  .log-msg.critical { color: var(--crit); }
+
+  .chart-wrap { position: relative; width: 100%; height: 120px; margin-top: 10px; }
+
+  #conn-status { font-size: 11px; color: var(--muted); }
+  #conn-status.error { color: var(--crit); }
+
+  .section-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 18px 0 10px; }
+
+  .no-data { color: var(--muted); font-size: 12px; font-style: italic; padding: 8px 0; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo">sys<span>health</span></div>
+    <div class="hostname-chip" id="hostname">connecting...</div>
+  </div>
+  <div class="topbar-right">
+    <span id="conn-status">Connecting to localhost:7777...</span>
+    <div class="live-pill" id="live-pill" style="display:none"><div class="dot"></div> Live</div>
+    <div class="last-update" id="last-update"></div>
+  </div>
+</div>
+
+<div class="alerts-bar" id="alerts-bar"></div>
+
+<div class="main">
+  <div class="overview-grid" id="overview"></div>
+
+  <div class="section-label">CPU</div>
+  <div class="card" id="cpu-card">
+    <div class="card-header">
+      <span class="card-title">Processor</span>
+      <span class="status-badge badge-ok" id="cpu-badge">—</span>
+    </div>
+    <div id="cpu-cores"></div>
+    <div class="chart-wrap"><canvas id="cpu-chart" role="img" aria-label="CPU usage history"></canvas></div>
+  </div>
+
+  <div class="section-label">Memory &amp; Storage</div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><span class="card-title">Memory</span><span class="status-badge badge-ok" id="mem-badge">—</span></div>
+      <div id="mem-content"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Disks &amp; S.M.A.R.T.</span><span class="status-badge badge-ok" id="disk-badge">—</span></div>
+      <div id="disk-content"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Top memory consumers</span></div>
+    <div id="mem-apps-content" class="app-list"><div class="no-data">Loading…</div></div>
+  </div>
+
+  <div class="section-label">GPU &amp; Thermals</div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><span class="card-title">GPU</span><span class="status-badge badge-ok" id="gpu-badge">—</span></div>
+      <div id="gpu-content"><div class="no-data">No GPU detected or nvidia-smi not installed.</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Thermals</span><span class="status-badge badge-ok" id="therm-badge">—</span></div>
+      <div id="therm-content"><div class="no-data">No thermal sensors detected.</div></div>
+    </div>
+  </div>
+
+  <div class="section-label">Network &amp; Battery</div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><span class="card-title">Network</span><span class="status-badge badge-ok" id="net-badge">—</span></div>
+      <div id="net-content"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Battery / Power</span><span class="status-badge badge-ok" id="bat-badge">—</span></div>
+      <div id="bat-content"></div>
+    </div>
+  </div>
+
+  <div class="section-label">System Logs</div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">Recent warnings &amp; errors</span></div>
+    <ul class="log-list" id="log-list"><li class="log-entry"><span class="log-msg">No log entries.</span></li></ul>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const API = 'http://127.0.0.1:7777/metrics';
+const INTERVAL = 5000;
+let cpuHistory = [];
+let cpuChart = null;
+
+function fmtGb(mb) {
+  const gb = mb / 1024;
+  return (gb >= 10 ? Math.round(gb) : Math.round(gb * 10) / 10) + ' GB';
+}
+function fmtMem(mb) {
+  return mb >= 1024 ? fmtGb(mb) : Math.round(mb) + ' MB';
+}
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function fillClass(pct) {
+  return pct >= 90 ? 'fill-crit' : pct >= 70 ? 'fill-warn' : 'fill-ok';
+}
+function valClass(pct, warnAt = 70, critAt = 90) {
+  return pct >= critAt ? 'val-crit' : pct >= warnAt ? 'val-warn' : 'val-ok';
+}
+function tempClass(t) {
+  return t >= 90 ? 'val-crit' : t >= 75 ? 'val-warn' : 'val-ok';
+}
+function badge(status) {
+  return status === 'critical' ? 'badge-critical' : status === 'warning' ? 'badge-warning' : 'badge-ok';
+}
+function setBadge(id, label, status) {
+  const el = document.getElementById(id);
+  el.className = 'status-badge ' + badge(status);
+  el.textContent = label;
+}
+function barRow(label, pct) {
+  const fc = fillClass(pct);
+  return `<div class="bar-row">
+    <div class="bar-label">${label}</div>
+    <div class="bar-track"><div class="bar-fill ${fc}" style="width:${Math.min(pct,100)}%"></div></div>
+    <div class="bar-pct">${pct}%</div>
+  </div>`;
+}
+
+function renderOverview(d) {
+  const cpu = d.cpu, mem = d.memory, bat = d.battery;
+  const gpus = d.gpu || [];
+  const gpuTemp = gpus.length ? gpus[0].temp_c : null;
+  const cards = [
+    { label: 'CPU', value: cpu.avg_pct + '%', sub: `${cpu.count_logical} threads · ${cpu.freq_mhz || '?'} MHz`, status: cpu.status },
+    { label: 'RAM', value: fmtGb(mem.used_mb), sub: `${mem.pct}% of ${fmtGb(mem.total_mb)}`, status: mem.status },
+    { label: 'Load avg', value: cpu.load_avg_1m, sub: `5m ${cpu.load_avg_5m} · 15m ${cpu.load_avg_15m}`, status: cpu.load_avg_1m > cpu.count_logical ? 'critical' : cpu.load_avg_1m > cpu.count_logical * 0.7 ? 'warning' : 'ok' },
+    gpuTemp != null ? { label: 'GPU temp', value: gpuTemp + '°C', sub: `${gpus[0].load_pct || '?'}% load · ${gpus[0].name.split(' ').slice(-1)[0]}`, status: gpus[0].status } : null,
+    bat.present ? { label: 'Battery', value: bat.pct + '%', sub: `${bat.status} · ${bat.health_pct != null ? bat.health_pct + '% health' : 'health unknown'}`, status: bat.status } : null,
+  ].filter(Boolean);
+
+  document.getElementById('overview').innerHTML = cards.map(c => `
+    <div class="overview-card ${c.status}">
+      <div class="oc-label">${c.label}</div>
+      <div class="oc-value ${c.status}">${c.value}</div>
+      <div class="oc-sub">${c.sub}</div>
+    </div>`).join('');
+}
+
+function renderCPU(d) {
+  const cpu = d.cpu;
+  setBadge('cpu-badge', cpu.status === 'critical' ? 'Critical' : cpu.status === 'warning' ? 'High' : 'Normal', cpu.status);
+  const coreHtml = cpu.cores.slice(0, 8).map(c => barRow('Core ' + c.id, c.pct)).join('');
+  const extra = cpu.cores.length > 8 ? `<div style="font-size:10px;color:var(--muted);margin-top:4px">+ ${cpu.cores.length - 8} more cores</div>` : '';
+  document.getElementById('cpu-cores').innerHTML = coreHtml + extra;
+
+  cpuHistory.push(cpu.avg_pct);
+  if (cpuHistory.length > 60) cpuHistory.shift();
+  const labels = cpuHistory.map((_, i) => i === cpuHistory.length - 1 ? 'now' : '');
+  if (!cpuChart) {
+    cpuChart = new Chart(document.getElementById('cpu-chart'), {
+      type: 'line',
+      data: {
+        labels, datasets: [{
+          data: [...cpuHistory],
+          borderColor: '#4caf50', backgroundColor: 'rgba(76,175,80,0.08)',
+          borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { min: 0, max: 100, ticks: { color: '#7a7f8a', font: { size: 10 }, stepSize: 25 }, grid: { color: 'rgba(255,255,255,0.04)' } },
+          x: { ticks: { color: '#7a7f8a', font: { size: 9 }, maxTicksLimit: 6, autoSkip: true }, grid: { display: false } }
+        }
+      }
+    });
+  } else {
+    cpuChart.data.labels = labels;
+    cpuChart.data.datasets[0].data = [...cpuHistory];
+    cpuChart.update('none');
+  }
+}
+
+function renderMemory(d) {
+  const m = d.memory;
+  setBadge('mem-badge', m.status === 'critical' ? 'Critical' : m.status === 'warning' ? 'High' : 'Normal', m.status);
+  document.getElementById('mem-content').innerHTML = `
+    ${barRow('RAM', m.pct)}
+    ${barRow('Swap', m.swap_pct)}
+    <table class="kv-table" style="margin-top:10px">
+      <tr><td>Total RAM</td><td>${fmtGb(m.total_mb)}</td></tr>
+      <tr><td>Used</td><td class="${valClass(m.pct)}">${fmtGb(m.used_mb)} (${m.pct}%)</td></tr>
+      <tr><td>Available</td><td>${fmtGb(m.available_mb)}</td></tr>
+      ${m.app_used_mb != null ? `<tr><td>App memory</td><td>${fmtGb(m.app_used_mb)} <span style="color:var(--muted)">(apps + wired)</span></td></tr>` : ''}
+      <tr><td>Swap used</td><td class="${valClass(m.swap_pct)}">${fmtGb(m.swap_used_mb)} / ${fmtGb(m.swap_total_mb)}</td></tr>
+    </table>`;
+  renderTopApps(m.top_apps || []);
+}
+
+function renderTopApps(apps) {
+  const el = document.getElementById('mem-apps-content');
+  if (!apps.length) {
+    el.innerHTML = '<div class="no-data">No application data available.</div>';
+    return;
+  }
+  const maxPct = Math.max(apps[0].mem_pct, 0.1);
+  el.innerHTML = apps.map(a => {
+    const barW = Math.min((a.mem_pct / maxPct) * 100, 100);
+    const procHint = a.processes > 1 ? ` · ${a.processes} processes` : '';
+    return `<div class="bar-row" title="${esc(a.name)}${procHint}">
+      <div class="bar-label app">${esc(a.name)}</div>
+      <div class="bar-track"><div class="bar-fill ${a.mem_pct >= 15 ? 'fill-crit' : a.mem_pct >= 8 ? 'fill-warn' : 'fill-ok'}" style="width:${barW}%"></div></div>
+      <div class="bar-pct">${fmtMem(a.mem_mb)} <span style="color:var(--muted)">${a.mem_pct}%</span></div>
+    </div>`;
+  }).join('');
+}
+
+function renderDisks(d) {
+  const disks = d.disks;
+  if (!disks.length) { document.getElementById('disk-content').innerHTML = '<div class="no-data">No disk data available.</div>'; return; }
+  let worstStatus = 'ok';
+  let html = '';
+  for (const dk of disks) {
+    if (dk.status === 'critical') worstStatus = 'critical';
+    else if (dk.status === 'warning' && worstStatus !== 'critical') worstStatus = 'warning';
+    const s = dk.smart || {};
+    html += `<div style="margin-bottom:12px">
+      ${barRow(dk.device.replace('/dev/', ''), dk.pct)}
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;font-family:var(--font)">${dk.used_gb}/${dk.total_gb} GB · ${dk.mountpoint}</div>`;
+    if (Object.keys(s).length > 0) {
+      html += `<table class="kv-table">`;
+      if (s.reallocated_sectors != null) html += `<tr><td>Reallocated sectors</td><td class="${s.reallocated_sectors > 0 ? 'val-warn' : 'val-ok'}">${s.reallocated_sectors}</td></tr>`;
+      if (s.pending_sectors != null) html += `<tr><td>Pending sectors</td><td class="${s.pending_sectors > 0 ? (s.pending_sectors > 3 ? 'val-crit' : 'val-warn') : 'val-ok'}">${s.pending_sectors}</td></tr>`;
+      if (s.uncorrectable != null) html += `<tr><td>Uncorrectable</td><td class="${s.uncorrectable > 0 ? 'val-crit' : 'val-ok'}">${s.uncorrectable}</td></tr>`;
+      if (s.temperature_c) html += `<tr><td>Disk temp</td><td class="${tempClass(s.temperature_c)}">${s.temperature_c}°C</td></tr>`;
+      if (s.power_on_hours) html += `<tr><td>Power-on hours</td><td>${s.power_on_hours.toLocaleString()} h</td></tr>`;
+      html += `</table>`;
+    }
+    html += `</div>`;
+  }
+  setBadge('disk-badge', worstStatus === 'critical' ? 'Critical' : worstStatus === 'warning' ? 'Watch' : 'Healthy', worstStatus);
+  document.getElementById('disk-content').innerHTML = html;
+}
+
+function renderGPU(d) {
+  const gpus = d.gpu || [];
+  if (!gpus.length) { setBadge('gpu-badge', 'N/A', 'ok'); return; }
+  const worstStatus = gpus.reduce((a, g) => g.status === 'critical' ? 'critical' : g.status === 'warning' && a !== 'critical' ? 'warning' : a, 'ok');
+  setBadge('gpu-badge', worstStatus === 'critical' ? 'Critical' : worstStatus === 'warning' ? 'Hot' : 'Normal', worstStatus);
+  document.getElementById('gpu-content').innerHTML = gpus.map(g => `
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-family:var(--font)">${g.name}</div>
+      ${g.load_pct != null ? barRow('GPU load', g.load_pct) : ''}
+      ${g.mem_pct != null ? barRow('VRAM', g.mem_pct) : ''}
+      <table class="kv-table" style="margin-top:8px">
+        <tr><td>Temperature</td><td class="${tempClass(g.temp_c)}">${g.temp_c}°C</td></tr>
+        ${g.mem_used_mb != null ? `<tr><td>VRAM used</td><td>${Math.round(g.mem_used_mb / 1024 * 10) / 10} / ${Math.round(g.mem_total_mb / 1024 * 10) / 10} GB</td></tr>` : ''}
+        ${g.fan_pct != null ? `<tr><td>Fan speed</td><td>${g.fan_pct}%</td></tr>` : ''}
+        ${g.power_draw_w != null ? `<tr><td>Power draw</td><td>${Math.round(g.power_draw_w)} / ${Math.round(g.power_limit_w)} W</td></tr>` : ''}
+      </table>
+    </div>`).join('');
+}
+
+function renderThermals(d) {
+  const sensors = d.thermals || [];
+  if (!sensors.length) { setBadge('therm-badge', 'N/A', 'ok'); return; }
+  const worst = sensors.reduce((a, s) => s.status === 'critical' ? 'critical' : s.status === 'warning' && a !== 'critical' ? 'warning' : a, 'ok');
+  setBadge('therm-badge', worst === 'critical' ? 'Critical' : worst === 'warning' ? 'Warm' : 'Normal', worst);
+  document.getElementById('therm-content').innerHTML = `<div class="temp-grid">${
+    sensors.slice(0, 8).map(s => `
+      <div class="temp-chip">
+        <div class="temp-name">${s.name}</div>
+        <div class="temp-val ${tempClass(s.temp_c)}">${s.temp_c}°C</div>
+      </div>`).join('')
+  }</div>`;
+}
+
+function renderNetwork(d) {
+  const ifaces = (d.network || []).filter(n => n.name !== 'lo');
+  if (!ifaces.length) { document.getElementById('net-content').innerHTML = '<div class="no-data">No network interfaces detected.</div>'; return; }
+  const worst = ifaces.reduce((a, i) => i.status === 'critical' ? 'critical' : i.status === 'warning' && a !== 'critical' ? 'warning' : a, 'ok');
+  setBadge('net-badge', worst === 'warning' ? 'Errors' : 'Healthy', worst);
+  document.getElementById('net-content').innerHTML = ifaces.map(n => `
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:8px;font-family:var(--font)">${n.name}</div>
+      <table class="kv-table">
+        <tr><td>↓ Download</td><td>${n.rx_rate_kbps >= 1024 ? (n.rx_rate_kbps / 1024).toFixed(1) + ' MB/s' : n.rx_rate_kbps + ' KB/s'}</td></tr>
+        <tr><td>↑ Upload</td><td>${n.tx_rate_kbps >= 1024 ? (n.tx_rate_kbps / 1024).toFixed(1) + ' MB/s' : n.tx_rate_kbps + ' KB/s'}</td></tr>
+        <tr><td>Packets dropped</td><td class="${(n.drops_in + n.drops_out) > 10 ? 'val-warn' : 'val-ok'}">${n.drops_in + n.drops_out}</td></tr>
+        <tr><td>Interface errors</td><td class="${(n.errors_in + n.errors_out) > 0 ? 'val-warn' : 'val-ok'}">${n.errors_in + n.errors_out}</td></tr>
+      </table>
+    </div>`).join('');
+}
+
+function renderBattery(d) {
+  const b = d.battery;
+  if (!b || !b.present) {
+    setBadge('bat-badge', 'No battery', 'ok');
+    document.getElementById('bat-content').innerHTML = '<div class="no-data">No battery detected (desktop/server).</div>';
+    return;
+  }
+  setBadge('bat-badge', b.status === 'critical' ? 'Critical' : b.status === 'warning' ? 'Degraded' : 'Healthy', b.status);
+  const pct = b.pct;
+  const fc = pct < 20 ? 'fill-crit' : pct < 40 ? 'fill-warn' : 'fill-ok';
+  document.getElementById('bat-content').innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px">
+      <div style="font-size:32px;font-family:var(--font);font-weight:600;color:${pct<20?'var(--crit)':pct<40?'var(--warn)':'var(--ok)'}">${pct}%</div>
+      <div style="font-size:11px;color:var(--muted)">${b.status}</div>
+    </div>
+    ${barRow('Charge', pct)}
+    <table class="kv-table" style="margin-top:10px">
+      ${b.health_pct != null ? `<tr><td>Battery health</td><td class="${b.health_pct < 80 ? 'val-warn' : 'val-ok'}">${b.health_pct}%</td></tr>` : ''}
+      ${b.cycle_count != null ? `<tr><td>Cycle count</td><td class="${b.cycle_count > 800 ? 'val-warn' : 'val-ok'}">${b.cycle_count}</td></tr>` : ''}
+      ${b.time_remaining ? `<tr><td>Time remaining</td><td>${b.time_remaining}</td></tr>` : ''}
+      ${b.manufacturer ? `<tr><td>Manufacturer</td><td>${b.manufacturer}</td></tr>` : ''}
+    </table>`;
+}
+
+function renderLogs(d) {
+  const logs = d.logs || [];
+  if (!logs.length) {
+    document.getElementById('log-list').innerHTML = '<li class="log-entry"><span class="log-msg" style="color:var(--ok)">No warnings in the last 2 hours.</span></li>';
+    return;
+  }
+  document.getElementById('log-list').innerHTML = logs.map(l => `
+    <li class="log-entry">
+      <span class="log-time">${l.time.slice(11, 16) || '--:--'}</span>
+      <span class="log-msg">${l.unit ? `<b style="color:var(--muted)">[${l.unit}]</b> ` : ''}${escHtml(l.msg)}</span>
+    </li>`).join('');
+}
+
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function buildAlerts(d) {
+  const warnings = [];
+  const crits = [];
+  if (d.cpu.status === 'critical') crits.push(`CPU at ${d.cpu.avg_pct}%`);
+  else if (d.cpu.status === 'warning') warnings.push(`CPU at ${d.cpu.avg_pct}%`);
+  if (d.memory.status === 'critical') crits.push(`RAM at ${d.memory.pct}%`);
+  else if (d.memory.status === 'warning') warnings.push(`RAM at ${d.memory.pct}%`);
+  for (const dk of d.disks || []) {
+    if (dk.smart && (dk.smart.reallocated_sectors > 0 || dk.smart.pending_sectors > 0))
+      warnings.push(`S.M.A.R.T. errors on ${dk.device}`);
+    if (dk.pct > 90) warnings.push(`${dk.device} at ${dk.pct}% capacity`);
+  }
+  for (const g of d.gpu || []) {
+    if (g.status === 'critical') crits.push(`GPU temp ${g.temp_c}°C`);
+    else if (g.status === 'warning') warnings.push(`GPU temp ${g.temp_c}°C`);
+  }
+  const bar = document.getElementById('alerts-bar');
+  if (crits.length) {
+    bar.className = 'alerts-bar visible critical';
+    bar.textContent = '⚠ CRITICAL: ' + crits.concat(warnings).join(' · ');
+  } else if (warnings.length) {
+    bar.className = 'alerts-bar visible';
+    bar.textContent = '⚠ ' + warnings.join(' · ');
+  } else {
+    bar.className = 'alerts-bar';
+  }
+}
+
+async function poll() {
+  const connEl = document.getElementById('conn-status');
+  const liveEl = document.getElementById('live-pill');
+  try {
+    const resp = await fetch(API);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const d = await resp.json();
+
+    document.getElementById('hostname').textContent = d.system.hostname;
+    document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    connEl.textContent = 'Connected';
+    connEl.className = '';
+    liveEl.style.display = 'flex';
+
+    renderOverview(d);
+    renderCPU(d);
+    renderMemory(d);
+    renderDisks(d);
+    renderGPU(d);
+    renderThermals(d);
+    renderNetwork(d);
+    renderBattery(d);
+    renderLogs(d);
+    buildAlerts(d);
+  } catch (e) {
+    connEl.textContent = 'Cannot reach localhost:7777 — is server.py running?';
+    connEl.className = 'error';
+    liveEl.style.display = 'none';
+  }
+}
+
+poll();
+setInterval(poll, INTERVAL);
+</script>
+</body>
+</html>
