@@ -8,7 +8,7 @@ if ! python3 -c "import psutil" 2>/dev/null; then
   pip install -r requirements.txt
 fi
 
-PORT="${PORT:-8888}"
+PORT="${PORT:-8889}"
 HOST="${HOST:-127.0.0.1}"
 
 echo ""

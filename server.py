@@ -33,7 +33,7 @@ import psutil
 # Fleet registry (hub mode): system_id -> { metrics, tags, last_seen, ... }
 _fleet_lock = Lock()
 _fleet_systems = {}
-STALE_AFTER_SEC = 35  # ~3 missed reports at 10s interval
+STALE_AFTER_SEC = 30  # inactive if no report within 30s (~3 missed at 10s interval)
 
 OS = platform.system()  # 'Linux', 'Darwin', 'Windows'
 

@@ -1,11 +1,13 @@
 import { Link } from 'react-router-dom'
 import type { FleetSystem } from '../types/metrics'
+import { isSystemActive } from '../lib/fleet'
 import { timeAgo } from '../lib/format'
 import { statusColors } from '../lib/status'
 import { StatusBadge } from './StatusBadge'
 
 export function SystemCard({ system }: { system: FleetSystem }) {
-  const c = statusColors(system.status)
+  const online = isSystemActive(system)
+  const c = statusColors(online ? system.status : 'offline')
 
   return (
     <Link
@@ -22,7 +24,7 @@ export function SystemCard({ system }: { system: FleetSystem }) {
             {system.os} {system.os_release} · {system.machine}
           </p>
         </div>
-        <StatusBadge status={system.status} />
+        <StatusBadge status={online ? system.status : 'offline'} />
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2 pl-2 text-center">
@@ -33,7 +35,7 @@ export function SystemCard({ system }: { system: FleetSystem }) {
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3 pl-2 text-[10px] text-[var(--color-muted)]">
         <span className="flex items-center gap-1.5">
-          {system.online ? (
+          {online ? (
             <>
               <span className={`h-1.5 w-1.5 rounded-full ${c.dot} animate-pulse-dot`} />
               Online

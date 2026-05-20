@@ -1,12 +1,22 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { fetchFleet } from '../api/client'
+import { INACTIVE_AFTER_SEC } from '../config'
 import { SystemCard } from '../components/SystemCard'
+import type { FleetSystem } from '../types/metrics'
 import { usePolling } from '../hooks/usePolling'
+import { isSystemActive } from '../lib/fleet'
 import { statusColors } from '../lib/status'
 
 export function FleetPage() {
   const load = useCallback(() => fetchFleet(), [])
   const { data, error, loading } = usePolling(load)
+
+  const { activeSystems, inactiveSystems } = useMemo(() => {
+    const systems = data?.systems ?? []
+    const active = systems.filter(isSystemActive)
+    const inactive = systems.filter((s) => !isSystemActive(s))
+    return { activeSystems: active, inactiveSystems: inactive }
+  }, [data?.systems])
 
   const counts = data?.counts ?? { ok: 0, warning: 0, critical: 0, offline: 0 }
 
@@ -59,13 +69,60 @@ export function FleetPage() {
       ) : null}
 
       {data && data.systems.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {data.systems.map((s) => (
-            <SystemCard key={s.id} system={s} />
-          ))}
+        <div className="space-y-8">
+          <FleetSection
+            title="Active"
+            subtitle={`${activeSystems.length} reporting · last seen within ${INACTIVE_AFTER_SEC}s`}
+            systems={activeSystems}
+            emptyMessage="No systems currently reporting."
+          />
+          {inactiveSystems.length > 0 ? (
+            <FleetSection
+              title="Inactive"
+              subtitle={`${inactiveSystems.length} not connected · no data for ${INACTIVE_AFTER_SEC}+ seconds`}
+              systems={inactiveSystems}
+              dimmed
+            />
+          ) : null}
         </div>
       ) : null}
     </div>
+  )
+}
+
+function FleetSection({
+  title,
+  subtitle,
+  systems,
+  emptyMessage,
+  dimmed,
+}: {
+  title: string
+  subtitle: string
+  systems: FleetSystem[]
+  emptyMessage?: string
+  dimmed?: boolean
+}) {
+  if (systems.length === 0 && !emptyMessage) return null
+
+  return (
+    <section>
+      <div className="mb-3">
+        <h2 className="text-sm font-semibold text-white">{title}</h2>
+        <p className="mt-0.5 text-[11px] text-[var(--color-muted)]">{subtitle}</p>
+      </div>
+      {systems.length === 0 ? (
+        <p className="text-sm text-[var(--color-muted)]">{emptyMessage}</p>
+      ) : (
+        <div
+          className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${dimmed ? 'opacity-80' : ''}`}
+        >
+          {systems.map((s) => (
+            <SystemCard key={s.id} system={s} />
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 

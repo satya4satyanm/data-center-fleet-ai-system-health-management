@@ -4,6 +4,14 @@ Real-time hardware health monitoring for single hosts and **data center fleets**
 
 Metrics are pushed every **10 seconds**; the dashboard refreshes on the same interval.
 
+-- To validate, quick run
+
+Run the frontend code in one terminal
+cd frontend, npm i, npm run dev, opens at localhost:5173, listens at port 8889 for logs
+
+Run the server.py in any machines which need to be tracked (in this case local)
+use ./scripts/start-local.sh for validation
+
 ---
 
 ## Prerequisites
@@ -270,7 +278,7 @@ cd frontend && npm run dev
 }
 ```
 
-Systems are marked **offline** if no report is received for **35 seconds**.
+Systems are marked **offline** (inactive in the dashboard) if no report is received for **30 seconds**.
 
 ---
 
